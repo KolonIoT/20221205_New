@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "core_pkcs11.h": "c",
+        "mqtt_demo_helpers.h": "c"
+    }
+}
