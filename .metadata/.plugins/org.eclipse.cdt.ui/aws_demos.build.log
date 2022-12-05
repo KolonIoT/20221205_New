@@ -1,6 +1,6 @@
-21:39:02 **** Build of configuration Debug for project aws_demos ****
+08:43:49 **** Incremental Build of configuration Debug for project aws_demos ****
 make all 
 make: Nothing to be done for 'all'.
 
-21:39:06 Build Finished (took 3s.656ms)
+08:43:51 Build Finished (took 2s.559ms)
 
