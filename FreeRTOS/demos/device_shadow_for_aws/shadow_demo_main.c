@@ -830,6 +830,7 @@ int RunDeviceShadowDemo(bool awsIotMqttMode,
 
 #if 1       /* Hyunjae */ 
             stateChanged = true;        /* only Test for update topic */
+            xDemoStatus = pdPASS;
 #endif 
 
 #if 0       /* Hyunjae */ 
@@ -1055,7 +1056,7 @@ int RunDeviceShadowDemo(bool awsIotMqttMode,
                 if (stateChanged == true)
                 {
 #if 1
-                    ulCurrentPowerOnState = ulCurrentPowerOnState + 10;
+                    ulCurrentPowerOnState = ulCurrentPowerOnState + 1;
 #endif
 
                     /* Report the latest power state back to device shadow. */

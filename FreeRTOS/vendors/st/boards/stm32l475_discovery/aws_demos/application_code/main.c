@@ -157,7 +157,7 @@ void vApplicationDaemonTaskStartupHook( void )
     if( xWifiStatus == eWiFiSuccess )
     {
 #if 1   /* Hyunjae */        
-        configPRINTF( ( "Test Version : 20221205-001 \r\n" ) );
+        configPRINTF( ( "Test Version : 20221206-001 \r\n" ) );
 #endif
 
         configPRINTF( ( "WiFi module initialized.\r\n" ) );
