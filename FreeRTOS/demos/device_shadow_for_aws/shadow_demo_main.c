@@ -123,6 +123,10 @@
  */
 #define SHADOW_DESIRED_JSON_LENGTH (sizeof(SHADOW_DESIRED_JSON) - 3)
 
+
+#if 1       /* hyunjae */
+#define SHADOW_DESIRED_UPDATE_JSON_LENGTH (sizeof(SHADOW_DESIRED_UPDATE_JSON) - 3)
+#endif
 /**
  * @brief Format string representing a Shadow document with a "reported" state.
  *
@@ -149,6 +153,18 @@
     "},"                        \
     "\"clientToken\":\"%06lu\"" \
     "}"
+
+#if 1       /* hyunjae */
+#define SHADOW_DESIRED_UPDATE_JSON    \
+    "{"                         \
+    "\"state\":{"               \
+    "\"reported\":{"            \
+    "\"powerOn\":%01d"          \
+    "},"                         \
+    "\"desired\":null"          \
+    "}"                        \
+    "}"
+#endif
 
 /**
  * @brief The expected size of #SHADOW_REPORTED_JSON.
@@ -457,7 +473,75 @@ static void prvDeleteRejectedHandler(MQTTPublishInfo_t *pxPublishInfo)
 }
 
 /*-----------------------------------------------------------*/
+#if 1    /* hyunjae */
+static void prvUpdateDeltaHandler(MQTTPublishInfo_t *pxPublishInfo)
+{
+    static uint32_t ulCurrentVersion = 0; /* Remember the latestVersion # we've ever received */
+    uint32_t ulVersion = 0U;
+    uint32_t ulNewState = 0U;
+    char *pcOutValue = NULL;
+    uint32_t ulOutValueLength = 0U;
+    JSONStatus_t result = JSONSuccess;
 
+    assert(pxPublishInfo != NULL);
+    assert(pxPublishInfo->pPayload != NULL);
+
+    LogInfo(("/update/delta json payload:%s.", (const char *)pxPublishInfo->pPayload));
+
+    /* Make sure the payload is a valid json document. */
+    result = JSON_Validate(pxPublishInfo->pPayload,
+                           pxPublishInfo->payloadLength);
+
+    /* When the version is much newer than the on we retained, that means the powerOn
+     * state is valid for us. */
+    if (result == JSONSuccess)
+    {
+        /* Set to received version as the current version. */
+        ulCurrentVersion = ulVersion;
+
+        /* Get powerOn state from json documents. */
+        result = JSON_Search((char *)pxPublishInfo->pPayload,
+                             pxPublishInfo->payloadLength,
+                             "state.powerOn",
+                             sizeof("state.powerOn") - 1,
+                             &pcOutValue,
+                             (size_t *)&ulOutValueLength);
+    }
+    else
+    {
+        /* In this demo, we discard the incoming message
+         * if the version number is not newer than the latest
+         * that we've received before. Your application may use a
+         * different approach.
+         */
+        LogWarn(("The received version is smaller than current one!!"));
+    }
+
+    if (result == JSONSuccess)
+    {
+        /* Convert the powerOn state value to an unsigned integer value. */
+        ulNewState = (uint32_t)strtoul(pcOutValue, NULL, 10);
+
+        LogInfo(("The new power on state newState:%d, ulCurrentPowerOnState:%d \r\n",
+                 ulNewState, ulCurrentPowerOnState));
+
+        /* The received powerOn state is different from the one we retained before, so we switch them
+            * and set the flag. */
+        ulCurrentPowerOnState = ulNewState;
+
+        /* State change will be handled in main(), where we will publish a "reported"
+            * state to the device shadow. We do not do it here because we are inside of
+            * a callback from the MQTT library, so that we don't re-enter
+            * the MQTT library. */
+        stateChanged = true;
+    }
+    else
+    {
+        LogError(("No powerOn in json document!!"));
+        xUpdateDeltaReturn = pdFAIL;
+    }
+}
+#else
 static void prvUpdateDeltaHandler(MQTTPublishInfo_t *pxPublishInfo)
 {
     static uint32_t ulCurrentVersion = 0; /* Remember the latestVersion # we've ever received */
@@ -575,7 +659,7 @@ static void prvUpdateDeltaHandler(MQTTPublishInfo_t *pxPublishInfo)
         xUpdateDeltaReturn = pdFAIL;
     }
 }
-
+#endif
 /*-----------------------------------------------------------*/
 
 static void prvUpdateAcceptedHandler(MQTTPublishInfo_t *pxPublishInfo)
@@ -771,6 +855,91 @@ static void prvEventCallback(MQTTContext_t *pxMqttContext,
  * loops to process incoming messages. Those are not the focus of this demo
  * and therefor, are placed in a separate file shadow_demo_helpers.c.
  */
+
+#if 1    /* hyunjae */
+int RunDeviceShadowDemo(bool awsIotMqttMode,
+                        const char *pIdentifier,
+                        void *pNetworkServerInfo,
+                        void *pNetworkCredentialInfo,
+                        const void *pNetworkInterface)
+{
+    BaseType_t xDemoStatus = pdPASS;
+    BaseType_t xMqttSessionStatus = pdFAIL;
+
+    /* A buffer containing the update document. It has static duration to prevent
+     * it from being placed on the call stack. */
+    static char pcUpdateDocument[SHADOW_REPORTED_JSON_LENGTH + 1] = {0};
+
+    /* Remove compiler warnings about unused parameters. */
+    (void)awsIotMqttMode;
+    (void)awsIotMqttMode;
+    (void)pIdentifier;
+    (void)pNetworkServerInfo;
+    (void)pNetworkCredentialInfo;
+ 
+    xMqttSessionStatus = EstablishMqttSession(&xMqttContext,
+                                &xNetworkContext,
+                                &xBuffer,
+                                prvEventCallback);
+
+    xDemoStatus = xMqttSessionStatus;
+
+    if (xDemoStatus == 1)
+    {
+        xDemoStatus = SubscribeToTopic(&xMqttContext,
+                                        SHADOW_TOPIC_STRING_UPDATE_DELTA(THING_NAME),
+                                        SHADOW_TOPIC_LENGTH_UPDATE_DELTA(THING_NAME_LENGTH));
+    }
+
+    if (xDemoStatus == 1)
+    {
+        xDemoStatus = SubscribeToTopic(&xMqttContext,
+                                        SHADOW_TOPIC_STRING_UPDATE_ACCEPTED(THING_NAME),
+                                        SHADOW_TOPIC_LENGTH_UPDATE_ACCEPTED(THING_NAME_LENGTH));
+    }
+
+    if (xDemoStatus == 1)
+    {
+        xDemoStatus = SubscribeToTopic(&xMqttContext,
+                                        SHADOW_TOPIC_STRING_UPDATE_REJECTED(THING_NAME),
+                                        SHADOW_TOPIC_LENGTH_UPDATE_REJECTED(THING_NAME_LENGTH));
+    }
+
+    do{
+        xDemoStatus = ProcessLoop( &xMqttContext, 100 );
+        vTaskDelay(100);
+ 
+        /* */
+        if(stateChanged == true){
+            /* Report the latest power state back to device shadow. */
+            LogInfo(("Report to the state change: %d", ulCurrentPowerOnState));
+            (void)memset(pcUpdateDocument,
+                            0x00,
+                            sizeof(pcUpdateDocument));
+
+            /* Keep the client token in global variable used to compare if
+                * the same token in /update/accepted. */
+            ulClientToken = (xTaskGetTickCount() % 1000000);
+
+            snprintf(pcUpdateDocument,
+                        SHADOW_DESIRED_UPDATE_JSON_LENGTH + 1,
+                        SHADOW_DESIRED_UPDATE_JSON,
+                        (int)ulCurrentPowerOnState,
+                        (long unsigned)ulClientToken);
+
+            xDemoStatus = PublishToTopic(&xMqttContext,
+                                            SHADOW_TOPIC_STRING_UPDATE(THING_NAME),
+                                            SHADOW_TOPIC_LENGTH_UPDATE(THING_NAME_LENGTH),
+                                            pcUpdateDocument,
+                                            (SHADOW_DESIRED_UPDATE_JSON_LENGTH + 1));
+
+            stateChanged = false;       
+        }
+    }while(1);
+
+    return ((xDemoStatus == pdPASS) ? EXIT_SUCCESS : EXIT_FAILURE);
+}
+#else
 int RunDeviceShadowDemo(bool awsIotMqttMode,
                         const char *pIdentifier,
                         void *pNetworkServerInfo,
@@ -829,7 +998,7 @@ int RunDeviceShadowDemo(bool awsIotMqttMode,
             xShadowDeleted = pdFALSE;
 
 #if 1       /* Hyunjae */ 
-            stateChanged = true;        /* only Test for update topic */
+            //stateChanged = true;        /* only Test for update topic */
             xDemoStatus = pdPASS;
 #endif 
 
@@ -973,10 +1142,10 @@ int RunDeviceShadowDemo(bool awsIotMqttMode,
             }         
 #endif
 
-#if 1       
-            if(hTestStatus == 1){
-                hTestStatus = 2;
-            }
+#if 1        /* hyunjae */
+            //if(hTestStatus == 1){
+            //    hTestStatus = 2;
+            //}
 #endif
 
             /* This demo uses a constant #THING_NAME known at compile time therefore we can use macros to
@@ -1055,8 +1224,11 @@ int RunDeviceShadowDemo(bool awsIotMqttMode,
                  */
                 if (stateChanged == true)
                 {
-#if 1
+#if 1    /* hyunjae */
                     ulCurrentPowerOnState = ulCurrentPowerOnState + 1;
+                    if(ulCurrentPowerOnState == 9){
+                        ulCurrentPowerOnState = 0;
+                    }
 #endif
 
                     /* Report the latest power state back to device shadow. */
@@ -1090,6 +1262,7 @@ int RunDeviceShadowDemo(bool awsIotMqttMode,
 
 #if 1       /* Hyunjae */ 
             xDemoStatus = pdFAIL;
+            vTaskDelay(1000);
 #endif
 
 #if 0       /* Hyunjae */ 
@@ -1181,5 +1354,5 @@ int RunDeviceShadowDemo(bool awsIotMqttMode,
 
     return ((xDemoStatus == pdPASS) ? EXIT_SUCCESS : EXIT_FAILURE);
 }
-
+#endif
 /*-----------------------------------------------------------*/
