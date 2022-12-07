@@ -80,6 +80,10 @@
 /* Transport interface implementation include header for TLS. */
 #include "transport_secure_sockets.h"
 
+#if 1   /* hyunjae */
+#include "stm32l475e_iot01.h"
+#endif 
+
 /**
  * @brief Format string representing a Shadow document with a "desired" state.
  *
@@ -934,6 +938,13 @@ int RunDeviceShadowDemo(bool awsIotMqttMode,
                                             (SHADOW_DESIRED_UPDATE_JSON_LENGTH + 1));
 
             stateChanged = false;       
+        }
+
+        if(ulCurrentPowerOnState == 0){         /* LED OFF */
+            BSP_LED_Off( LED_GREEN );
+        }
+        else {         /* LED ON */
+            BSP_LED_On(LED_GREEN);
         }
     }while(1);
 
